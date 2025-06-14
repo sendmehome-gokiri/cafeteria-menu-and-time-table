@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+  <h1>우리 학교 급식/시간표 조회</h1>
+
+  <input type="radio" name="schoolLevel" value="중학교" checked /> 중학교
+  <input type="radio" name="schoolLevel" value="고등학교" /> 고등학교<br/>
+
+  <input type="text" id="schoolName" placeholder="학교 이름 입력" />
+  <input type="date" id="targetDate" />
+  <input type="number" id="grade" placeholder="학년 (예: 1)" min="1" />
+  <input type="number" id="classNum" placeholder="반 (예: 1)" min="1" />
+  <button onclick="getMealAndTimetable()">조회</button>
+
+  <div id="mealResult"></div>
+  
+  <script>
+      const API_KEYS = {
+    '중학교': '4f65f5cdce8c4124aa27ca3ef6be7510',
+    '고등학교': 'c1e57e7d0a99471e92ca9c0b08841865'
+	  };
+
+  async function getMealAndTimetable() {
+    const schoolLevel = document.querySelector('input[name="schoolLevel"]:checked').value;
+    const API_KEY = API_KEYS[schoolLevel];
+
+    const schoolName = document.querySelector('#schoolName').value.trim();
+    const date = document.querySelector('#targetDate').value.replaceAll('-', '');
+    const grade = document.querySelector('#grade').value.trim();
+    const classNum = document.querySelector('#classNum').value.trim();
+
+    if (!schoolName || !date || !grade || !classNum) {
+      document.querySelector('#mealResult').innerText = '모든 입력값(학교, 날짜, 학년, 반)을 채워주세요.';
+      return;
+    }
+
+    // 1. 학교 정보 조회
+    const schoolInfoUrl = `https://open.neis.go.kr/hub/schoolInfo?KEY=e53aa95cbb5c4a4c94b044793dd453f7&Type=json&SCHUL_NM=${encodeURIComponent(schoolName)}`;
+    const infoRes = await fetch(schoolInfoUrl);
+    const infoData = await infoRes.json();
+
+    if (!infoData.schoolInfo) {
+      document.querySelector('#mealResult').innerText = '학교를 찾을 수 없어요.';
+      return;
+    }
+
+    const schoolCode = infoData.schoolInfo[1].row[0].SD_SCHUL_CODE;
+    const eduCode = infoData.schoolInfo[1].row[0].ATPT_OFCDC_SC_CODE;
+    const schoolKind = infoData.schoolInfo[1].row[0].SCHUL_KND_SC_NM;
+
+    // 2. 급식 조회
+    const mealUrl = `https://open.neis.go.kr/hub/mealServiceDietInfo?KEY=e53aa95cbb5c4a4c94b044793dd453f7&Type=json&ATPT_OFCDC_SC_CODE=${eduCode}&SD_SCHUL_CODE=${schoolCode}&MLSV_YMD=${date}`;
+    const mealRes = await fetch(mealUrl);
+    const mealData = await mealRes.json();
+
+    let mealText = '🍽 급식 메뉴:\n';
+
+    if (mealData.mealServiceDietInfo) {
+      const dishList = mealData.mealServiceDietInfo[1].row;
+      const groupedMeals = {
+        '조식': [],
+        '중식': [],
+        '석식': []
+      };
+
+      dishList.forEach(meal => {
+        const mealType = meal.MMEAL_SC_NM;
+        const menu = meal.DDISH_NM.replace(/<br\/>/g, '\n');
+        groupedMeals[mealType].push(menu);
+      });
+
+      for (const [type, menus] of Object.entries(groupedMeals)) {
+        if (menus.length > 0) {
+          mealText += `\n🍱 [${type}]\n${menus.join('\n')}\n`;
+        }
+      }
+    } else {
+      mealText += '해당 날짜의 급식 정보가 없어요.\n';
+    }
+
+    // 3. 시간표 조회
+    const timetableEndpoint = schoolKind.includes('고') ? 'hisTimetable' : schoolKind.includes('중') ? 'misTimetable' : 'elsTimetable';
+    const timeUrl = `https://open.neis.go.kr/hub/${timetableEndpoint}?KEY=${API_KEY}&Type=json&ATPT_OFCDC_SC_CODE=${eduCode}&SD_SCHUL_CODE=${schoolCode}&ALL_TI_YMD=${date}&GRADE=${grade}&CLASS_NM=${classNum}`;
+    const timeRes = await fetch(timeUrl);
+    const timeData = await timeRes.json();
+
+    let timetableText = '\n📚 시간표:\n';
+
+    if (timeData[timetableEndpoint]) {
+      const classes = timeData[timetableEndpoint][1].row;
+
+      classes.forEach(cls => {
+        timetableText += `${cls.PERIO}교시: ${cls.ITRT_CNTNT}\n`;
+      });
+    } else {
+      timetableText += '해당 날짜의 시간표 정보가 없어요.\n';
+    }
+
+    document.querySelector('#mealResult').innerText = mealText + '\n' + timetableText;
+  }
+
+  </script>
+
+</body>
+</html>
